@@ -1,0 +1,175 @@
+---
+title: "Query_gene_correlation_shiny"
+output: html_document
+date: '2022-06-28'
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load the required packages
+
+```{r}
+library(tidyverse)
+library(reactable)
+library(shiny)
+```
+
+## simulate a list of gene correlation data frame
+
+```{r}
+tissue.names <- c("Fin", "Eye", "Skin", "Gill")
+gene.names <- c(paste0("gene.", letters[1:10]))
+
+#generate correlation matrix
+cor.matrix.f <- function(){
+    matrix(sprintf("%.2f", round(runif(100, min = 0, max = 1), digits =2)),
+           nrow = 10,
+           ncol = 10,
+           dimnames = list(gene.names, gene.names)
+           )
+}
+
+tissue.cor.list <- vector("list", 4)
+names(tissue.cor.list) <- tissue.names
+for(nm in names(tissue.cor.list)){
+    tissue.cor.list[[nm]] <- cor.matrix.f()
+}
+
+tissue.cor.list
+```
+
+
+## Reorganize the cor.list to become searchable by gene names
+
+```{r}
+gene.cor.df <- vector("list", length(gene.names))
+names(gene.cor.df) <- gene.names
+
+for (gene in names(gene.cor.df)){
+    df <- NULL
+    for (tissue in names(tissue.cor.list)){
+        df <- rbind(df,
+                    cbind(rep(tissue, 10), gene.names, tissue.cor.list[[tissue]][gene,])
+        )
+    }
+    df <- df %>% as.data.frame() %>% 
+        set_names(c("Tissue", "Gene", "r")) %>% 
+        remove_rownames() %>%
+        group_by(Tissue) %>% 
+        arrange(desc(r), .by_group = TRUE) %>%  
+        ungroup() %>% 
+        mutate(rank = rep(1:10, 4)) %>%
+        arrange(Tissue)
+    
+    gene.cor.df[[gene]] <- as.data.frame(df)
+}
+
+gene.cor.df[[1]]
+```
+
+
+## Create an interactive table function
+
+```{r}
+create.tissue.cor.table.f <- function(gene.of.interest = "gene.a", tissue.of.interest = "Fin", df = gene.cor.df){
+    df <- df[[gene.of.interest]] 
+    df.reactable <- df %>%
+        reactable(
+            pagination = FALSE,
+            highlight = TRUE,
+            striped = TRUE,
+            fullWidth = FALSE,
+            wrap = TRUE,
+            searchable = TRUE,
+            elementId = "cor-table",
+            defaultColDef = colDef(vAlign = "center", headerVAlign = "bottom"),
+            groupBy = c("Tissue"),
+            columns = list(
+                Tissue = colDef(
+                    width = 100, # Formatting with fixed width
+                    align = "left",
+                    # Render grouped cells without the row count
+                    grouped = JS("function(cellInfo) {
+                return cellInfo.value
+                }")
+                ),
+                Gene = colDef(
+                    width = 100,
+                    align = "left"
+                    ),
+                r = colDef(width = 100),
+                rank = colDef(width = 100,
+                              align = "left"
+                              )
+                )
+        )
+
+
+    # Add CSV download button
+    # https://glin.github.io/reactable/articles/examples.html#csv-download-button
+    library(htmltools)
+    library(fontawesome)
+    
+    csvDownloadButton <- function(tableId, label = "Download as CSV", filename = "data.csv") {
+        htmltools::tags$button(
+            label,
+            onclick = sprintf("Reactable.downloadDataCSV('%s', '%s')", tableId, filename)
+        )
+    }
+    
+    filename <- paste0(gene.of.interest, "_gene-correlation-table")
+    htmltools::browsable(
+        tagList(
+            h2(
+                id = 'myDiv', class = 'simpleDiv',
+                paste0("Correlation of ", gene.of.interest)
+            ),
+            csvDownloadButton("cor-table", "Download Full Table as .csv file", filename = filename),
+            df.reactable
+        )
+    )
+
+}
+
+
+## test the function
+create.tissue.cor.table.f()
+```
+
+## Create a gene name searching bar by shiny
+
+```{r}
+ui <- fluidPage(
+  selectInput("gene.of.interest", "gene", gene.names),
+  reactableOutput("table")
+)
+
+server <- function(input, output) {
+  output$table <- renderReactable({
+    create.tissue.cor.table.f(input$gene.of.interest)
+  })
+}
+
+
+ui <- fluidPage(
+  selectInput("gene.of.interest", "gene", gene.names),
+  uiOutput("table")
+)
+
+server <- function(input, output) {
+  output$table <- renderUI({
+    create.tissue.cor.table.f(input$gene.of.interest)
+  })
+}
+
+
+shinyApp(ui, server)
+
+
+```
+
+
+
