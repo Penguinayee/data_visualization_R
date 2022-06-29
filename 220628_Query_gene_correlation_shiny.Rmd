@@ -74,7 +74,7 @@ gene.cor.df[[1]]
 ## Create an interactive table function
 
 ```{r}
-create.tissue.cor.table.f <- function(gene.of.interest = "gene.a", tissue.of.interest = "Fin", df = gene.cor.df){
+create.tissue.cor.table.f <- function(gene.of.interest = "gene.a", df = gene.cor.df){
     df <- df[[gene.of.interest]] 
     df.reactable <- df %>%
         reactable(
